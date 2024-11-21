@@ -47,61 +47,73 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
   "GET request" - {
     "must be forwarded with headers" in {
       val responseBody = """{"jam": "scones"}"""
+      forAll(Table(
+        "backends",
+        "platform-management",
+        "api-hub-apim-stubs"
+      )) {
+        backend =>
+        stubFor(
+          get(urlEqualTo("/apim-path/oas-deployments"))
+            .withHeader(ACCEPT, equalTo(ContentTypes.JSON))
+            .withHeader(AUTHORIZATION, equalTo("Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA=="))
+            .willReturn(
+              aResponse()
+                .withBody(responseBody)
+            )
+        )
 
-      stubFor(
-        get(urlEqualTo("/apim-path/platform-management/oas-deployments"))
-          .withHeader(ACCEPT, equalTo(ContentTypes.JSON))
-          .withHeader(AUTHORIZATION, equalTo("Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA=="))
-          .willReturn(
-            aResponse()
-              .withBody(responseBody)
-          )
-      )
+        val fixture = buildApplication()
+        running(fixture.application) {
+          val request = FakeRequest(GET, s"/apim-proxy/$backend/oas-deployments")
+            .withHeaders(FakeHeaders(Seq(
+              (AUTHORIZATION, "Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA=="),
+              (ACCEPT, "application/json")
+            )))
+          val result = route(fixture.application, request).value
 
-      val fixture = buildApplication()
-      running(fixture.application) {
-        val request = FakeRequest(GET, "/apim-proxy/platform-management/oas-deployments")
-          .withHeaders(FakeHeaders(Seq(
-            (AUTHORIZATION, "Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA=="),
-            (ACCEPT, "application/json")
-          )))
-        val result = route(fixture.application, request).value
-
-        status(result) mustBe OK
-        verify(fixture.authorizationDecorator).decorate(any(), any())
-        contentAsString(result) mustBe responseBody
+          status(result) mustBe OK
+          verify(fixture.authorizationDecorator).decorate(any(), any())
+          contentAsString(result) mustBe responseBody
+        }
       }
     }
 
     "must strip out an x-api-key header" in {
       val xApiKeyHeaderName = "x-api-key"
-
-      stubFor(
-        get(urlEqualTo("/apim-path/platform-management/oas-deployments"))
-          .withHeader(xApiKeyHeaderName, absent())
-          .willReturn(
-            aResponse()
+      forAll(Table(
+        "backends",
+        "platform-management",
+        "api-hub-apim-stubs"
+      )) {
+        backend =>
+          stubFor(
+            get(urlEqualTo("/apim-path/oas-deployments"))
+              .withHeader(xApiKeyHeaderName, absent())
+              .willReturn(
+                aResponse()
+              )
           )
-      )
 
-      val fixture = buildApplication()
-      running(fixture.application) {
-        val request = FakeRequest(GET, "/apim-proxy/platform-management/oas-deployments")
-          .withHeaders(FakeHeaders(Seq(
-            (xApiKeyHeaderName, "test-api-key")
-          )))
+          val fixture = buildApplication()
+          running(fixture.application) {
+            val request = FakeRequest(GET, s"/apim-proxy/$backend/oas-deployments")
+              .withHeaders(FakeHeaders(Seq(
+                (xApiKeyHeaderName, "test-api-key")
+              )))
 
-        val result = route(fixture.application, request).value
+            val result = route(fixture.application, request).value
 
-        status(result) mustBe OK
+            status(result) mustBe OK
+          }
       }
     }
 
     "must work for all configured APIs" in {
       val apis = Table(
         "API",
-        "/platform-management/oas-deployments",
-        "/platform-management/simple-api-deployment"
+        "/oas-deployments",
+        "/simple-api-deployment"
       )
 
       val fixture = buildApplication()
@@ -115,7 +127,7 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
                 )
             )
 
-            val request = FakeRequest(GET, s"/apim-proxy$api/test-endpoint")
+            val request = FakeRequest(GET, s"/apim-proxy/platform-management$api/test-endpoint")
             val result = route(fixture.application, request).value
 
             status(result) mustBe OK
@@ -126,10 +138,44 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
     "must preserve content type header when present" in {
       val responseBody = """{"jam": "scones"}"""
 
+      forAll(Table(
+        "backends",
+        "platform-management",
+        "api-hub-apim-stubs"
+      )) {
+        backend =>
+
+          stubFor(
+            post(urlEqualTo("/apim-path/oas-deployments"))
+              .withHeader(ACCEPT, equalTo(ContentTypes.JSON))
+              .withHeader(CONTENT_TYPE, equalTo(ContentTypes.FORM))
+              .withHeader(AUTHORIZATION, equalTo("Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA=="))
+              .willReturn(
+                aResponse()
+                  .withBody(responseBody)
+              )
+          )
+
+          val fixture = buildApplication()
+          running(fixture.application) {
+            val request = FakeRequest(POST, s"/apim-proxy/$backend/oas-deployments")
+              .withHeaders(FakeHeaders(Seq(
+                (ACCEPT, "application/json"),
+                (CONTENT_TYPE, ContentTypes.FORM),
+                (AUTHORIZATION, "Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA==")
+              )))
+            val result = route(fixture.application, request).value
+
+            status(result) mustBe OK
+            contentAsString(result) mustBe responseBody
+          }
+      }
+    }
+    "must return not acceptable if the route is not supported" in {
+      val responseBody = """{"jam": "scones"}"""
       stubFor(
-        post(urlEqualTo("/apim-path/platform-management/oas-deployments"))
+        get(urlEqualTo("/apim-path/oas-deployments"))
           .withHeader(ACCEPT, equalTo(ContentTypes.JSON))
-          .withHeader(CONTENT_TYPE, equalTo(ContentTypes.FORM))
           .withHeader(AUTHORIZATION, equalTo("Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA=="))
           .willReturn(
             aResponse()
@@ -139,16 +185,14 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
 
       val fixture = buildApplication()
       running(fixture.application) {
-        val request = FakeRequest(POST, "/apim-proxy/platform-management/oas-deployments")
+        val request = FakeRequest(GET, s"/apim-proxy/not-supported/oas-deployments")
           .withHeaders(FakeHeaders(Seq(
-            (ACCEPT, "application/json"),
-            (CONTENT_TYPE, ContentTypes.FORM),
-            (AUTHORIZATION, "Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA==")
+            (AUTHORIZATION, "Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA=="),
+            (ACCEPT, "application/json")
           )))
         val result = route(fixture.application, request).value
 
-        status(result) mustBe OK
-        contentAsString(result) mustBe responseBody
+        status(result) mustBe NOT_ACCEPTABLE
       }
     }
   }
@@ -163,7 +207,10 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
       Configuration.from(Map(
         "microservice.services.platform-management-api.host" -> wireMockHost,
         "microservice.services.platform-management-api.port" -> wireMockPort,
-        "microservice.services.platform-management-api.path" -> "apim-path"
+        "microservice.services.platform-management-api.path" -> "apim-path",
+        "microservice.services.api-hub-apim-stubs.host" -> wireMockHost,
+        "microservice.services.api-hub-apim-stubs.port" -> wireMockPort,
+        "microservice.services.api-hub-apim-stubs.path" -> "apim-path"
       ))
     )
 
