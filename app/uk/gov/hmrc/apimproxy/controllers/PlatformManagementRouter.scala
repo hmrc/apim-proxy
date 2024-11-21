@@ -14,13 +14,17 @@
  * limitations under the License.
  */
 
-package uk.gov.hmrc.apimproxy.config
+package uk.gov.hmrc.apimproxy.controllers
 
-import javax.inject.{Inject, Singleton}
-import play.api.Configuration
+import play.api.routing.Router.Routes
+import play.api.routing.SimpleRouter
 
-@Singleton
-class AppConfig @Inject()(config: Configuration) {
+import javax.inject.Inject
 
-  val appName: String = config.get[String]("appName")
+class PlatformManagementRouter @Inject()(platformManagementController: PlatformManagementController) extends SimpleRouter {
+
+  override def routes: Routes = {
+    case _ => platformManagementController.forward
+  }
+
 }
