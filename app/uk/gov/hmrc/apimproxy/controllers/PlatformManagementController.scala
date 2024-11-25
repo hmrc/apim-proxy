@@ -23,15 +23,13 @@ import play.api.libs.ws.DefaultBodyWritables.writeableOf_Bytes
 import play.api.mvc._
 import uk.gov.hmrc.http.HttpReads.Implicits._
 import uk.gov.hmrc.http.client.{HttpClientV2, RequestBuilder}
-import uk.gov.hmrc.http.{HeaderCarrier, HttpResponse, NotAcceptableException, StringContextOps}
+import uk.gov.hmrc.http.{HeaderCarrier, HttpResponse, StringContextOps}
 import uk.gov.hmrc.apimproxy.service.AuthorizationDecorator
 import uk.gov.hmrc.play.bootstrap.backend.controller.BackendController
 import uk.gov.hmrc.play.bootstrap.config.ServicesConfig
 
 import javax.inject.{Inject, Singleton}
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
-import scala.util.control.NonFatal
+import scala.concurrent.ExecutionContext
 
 @Singleton
 class PlatformManagementController @Inject()(
@@ -41,8 +39,8 @@ class PlatformManagementController @Inject()(
                                               authorizationDecorator: AuthorizationDecorator)(implicit ec: ExecutionContext) extends BackendController(controllerComponents) with Logging {
 
   implicit class HttpClientExtensions(httpClient: HttpClientV2) {
-    def httpVerb(method: String, relativePath: String)(implicit hc: HeaderCarrier): RequestBuilder = {
-      val url = url"${targetUrl(relativePath)}"
+    def httpVerb(method: String, forwardUrl: String)(implicit hc: HeaderCarrier): RequestBuilder = {
+      val url = url"$forwardUrl"
 
       logger.info(s"Forwarding $method request to resolved path: ${url.toString}")
 
@@ -59,46 +57,36 @@ class PlatformManagementController @Inject()(
     }
   }
 
-  def forward: Action[ByteString] = Action(parse.byteString).async {
+  def forward(forwardUrl: String): Action[ByteString] = Action(parse.byteString).async {
     implicit request =>
-      logger.info(s"Received ${request.method} request for path ${request.path}")
-      Try(httpClient
-        .httpVerb(request.method, request.path.replaceFirst("/apim-proxy", ""))
-      ).fold(
-        {
-          case NonFatal(e: NotAcceptableException) => Future.successful(NotAcceptable(e.message))
-          case NonFatal(e) => Future.successful(InternalServerError(e.getMessage))
-        },
-        builder => {
-          val builderWithContentType = request.headers.get(CONTENT_TYPE) match {
-            case Some(contentType) =>
-              builder.setHeader(CONTENT_TYPE -> contentType).withBody(request.body)
-            case _ =>
-              builder.withBody(request.body)
-          }
+      val builder = httpClient.httpVerb(request.method, forwardUrl)
+      val builderWithContentType = request.headers.get(CONTENT_TYPE) match {
+        case Some(contentType) =>
+          builder.setHeader(CONTENT_TYPE -> contentType).withBody(request.body)
+        case _ =>
+          builder.withBody(request.body)
+      }
 
-          val builderWithAuthHeaders = if (request.headers.hasHeader(ACCEPT)) {
-            builderWithContentType.setHeader((ACCEPT, request.headers.get(ACCEPT).get))
-              .transform(wsRequest => authorizationDecorator.decorate(wsRequest, request.headers.get(AUTHORIZATION)))
-          } else {
-            builderWithContentType.transform(wsRequest => authorizationDecorator.decorate(wsRequest, request.headers.get(AUTHORIZATION)))
-          }
+      val builderWithAuthHeaders = if (request.headers.hasHeader(ACCEPT)) {
+        builderWithContentType.setHeader((ACCEPT, request.headers.get(ACCEPT).get))
+          .transform(wsRequest => authorizationDecorator.decorate(wsRequest, request.headers.get(AUTHORIZATION)))
+      } else {
+        builderWithContentType.transform(wsRequest => authorizationDecorator.decorate(wsRequest, request.headers.get(AUTHORIZATION)))
+      }
 
-          builderWithAuthHeaders.execute[HttpResponse]
-            .map(
-              response => {
-                logger.info(s"Received response code ${response.status} and body ${response.body}")
-                Result(
-                  ResponseHeader(
-                    status = response.status,
-                    headers = buildHeaders(response.headers)
-                  ),
-                  body = buildBody(response.body, response.headers)
-                )
-              }
+      builderWithAuthHeaders.execute[HttpResponse]
+        .map(
+          response => {
+            logger.info(s"Received response code ${response.status} and body ${response.body}")
+            Result(
+              ResponseHeader(
+                status = response.status,
+                headers = buildHeaders(response.headers)
+              ),
+              body = buildBody(response.body, response.headers)
             )
           }
-      )
+        )
   }
 
   private def buildBody(body: String, headers: Map[String, Seq[String]]): HttpEntity = {
@@ -128,30 +116,5 @@ class PlatformManagementController @Inject()(
         case (header, _) if header.equalsIgnoreCase("content-length") => false
         case _ => true
       }
-  }
-
-  private def targetUrl(relativePath: String): String = {
-    val (baseUrl, servicePath, path) = relativePath match {
-      case s"/platform-management/$servicePath" =>
-        (
-          servicesConfig.baseUrl("platform-management-api"),
-          servicesConfig.getConfString("platform-management-api.path", ""),
-          servicePath
-        )
-      case s"/api-hub-apim-stubs/$servicePath" =>
-        (
-          servicesConfig.baseUrl("api-hub-apim-stubs"),
-          servicesConfig.getConfString("api-hub-apim-stubs.path", ""),
-          servicePath
-        )
-      case unsupportedPath => throw new NotAcceptableException(s"Unsupported path $unsupportedPath")
-    }
-
-    if (servicePath.isEmpty) {
-      s"$baseUrl/$path"
-    }
-    else {
-      s"$baseUrl/$servicePath/$path"
-    }
   }
 }

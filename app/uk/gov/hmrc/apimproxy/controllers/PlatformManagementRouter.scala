@@ -16,15 +16,54 @@
 
 package uk.gov.hmrc.apimproxy.controllers
 
+import play.api.Logging
+import play.api.mvc.RequestHeader
 import play.api.routing.Router.Routes
 import play.api.routing.SimpleRouter
+import uk.gov.hmrc.apimproxy.config.AppConfig
+import uk.gov.hmrc.play.bootstrap.config.ServicesConfig
 
 import javax.inject.Inject
 
-class PlatformManagementRouter @Inject()(platformManagementController: PlatformManagementController) extends SimpleRouter {
+class PlatformManagementRouter @Inject()(
+                                          servicesConfig: ServicesConfig,
+                                          config: AppConfig,
+                                          platformManagementController: PlatformManagementController)
+  extends SimpleRouter
+  with Logging {
+
+  private val platformManagementRoute = "platform-management"
+  private val stubsRoute = "api-hub-apim-stubs"
 
   override def routes: Routes = {
-    case _ => platformManagementController.forward
+    case request if request.path.startsWith(s"/$platformManagementRoute/") =>
+      platformManagementController.forward(forwardPath(
+            servicesConfig.baseUrl("platform-management-api"),
+            servicesConfig.getConfString("platform-management-api.path", ""),
+            servicePath(platformManagementRoute, request),
+            request))
+    case request if request.path.startsWith(s"/$stubsRoute") =>
+          platformManagementController.forward(forwardPath(
+            servicesConfig.baseUrl("api-hub-apim-stubs"),
+            servicesConfig.getConfString("api-hub-apim-stubs.path", ""),
+            servicePath(stubsRoute, request),
+            request))
+  }
+
+  private def servicePath(routeToRemove: String, request: RequestHeader) =
+    request.path.replaceFirst(s"/$routeToRemove/", "")
+
+  private def forwardPath(
+                           baseUrl: String,
+                           path: String,
+                           servicePath: String,
+                           request: RequestHeader) = {
+    logger.info(s"Received ${request.method} request for path ${request.path}")
+    if (servicePath.isEmpty) {
+        s"$baseUrl/$path"
+    } else {
+        s"$baseUrl/$path/$servicePath"
+    }
   }
 
 }

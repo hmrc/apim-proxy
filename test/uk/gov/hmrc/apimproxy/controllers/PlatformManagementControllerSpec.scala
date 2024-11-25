@@ -171,30 +171,6 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
           }
       }
     }
-    "must return not acceptable if the route is not supported" in {
-      val responseBody = """{"jam": "scones"}"""
-      stubFor(
-        get(urlEqualTo("/apim-path/oas-deployments"))
-          .withHeader(ACCEPT, equalTo(ContentTypes.JSON))
-          .withHeader(AUTHORIZATION, equalTo("Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA=="))
-          .willReturn(
-            aResponse()
-              .withBody(responseBody)
-          )
-      )
-
-      val fixture = buildApplication()
-      running(fixture.application) {
-        val request = FakeRequest(GET, s"/apim-proxy/not-supported/oas-deployments")
-          .withHeaders(FakeHeaders(Seq(
-            (AUTHORIZATION, "Basic dGVzdC1lbXMtY2xpZW50LWlkOnRlc3QtZW1zLXNlY3JldA=="),
-            (ACCEPT, "application/json")
-          )))
-        val result = route(fixture.application, request).value
-
-        status(result) mustBe NOT_ACCEPTABLE
-      }
-    }
   }
 
   case class Fixture(
