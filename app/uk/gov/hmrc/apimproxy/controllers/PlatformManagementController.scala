@@ -39,8 +39,8 @@ class PlatformManagementController @Inject()(
                                               authorizationDecorator: AuthorizationDecorator)(implicit ec: ExecutionContext) extends BackendController(controllerComponents) with Logging {
 
   implicit class HttpClientExtensions(httpClient: HttpClientV2) {
-    def httpVerb(method: String, relativePath: String)(implicit hc: HeaderCarrier): RequestBuilder = {
-      val url = url"${s"$targetUrl$relativePath"}"
+    def httpVerb(method: String, forwardUrl: String)(implicit hc: HeaderCarrier): RequestBuilder = {
+      val url = url"$forwardUrl"
 
       logger.info(s"Forwarding $method request to resolved path: ${url.toString}")
 
@@ -57,26 +57,24 @@ class PlatformManagementController @Inject()(
     }
   }
 
-  def forward: Action[ByteString] = Action(parse.byteString).async {
+  def forward(forwardUrl: String): Action[ByteString] = Action(parse.byteString).async {
     implicit request =>
-      logger.info(s"Received ${request.method} request for path ${request.path}")
-      var builder = httpClient
-        .httpVerb(request.method, request.path.replaceFirst("/apim-proxy", ""))
-
-      request.headers.get(CONTENT_TYPE) match {
+      val builder = httpClient.httpVerb(request.method, forwardUrl)
+      val builderWithContentType = request.headers.get(CONTENT_TYPE) match {
         case Some(contentType) =>
-          builder = builder.setHeader(CONTENT_TYPE -> contentType).withBody(request.body)
+          builder.setHeader(CONTENT_TYPE -> contentType).withBody(request.body)
         case _ =>
-          builder = builder.withBody(request.body)
+          builder.withBody(request.body)
       }
 
-      if (request.headers.hasHeader(ACCEPT)) {
-        builder = builder.setHeader((ACCEPT, request.headers.get(ACCEPT).get))
+      val builderWithAuthHeaders = if (request.headers.hasHeader(ACCEPT)) {
+        builderWithContentType.setHeader((ACCEPT, request.headers.get(ACCEPT).get))
+          .transform(wsRequest => authorizationDecorator.decorate(wsRequest, request.headers.get(AUTHORIZATION)))
+      } else {
+        builderWithContentType.transform(wsRequest => authorizationDecorator.decorate(wsRequest, request.headers.get(AUTHORIZATION)))
       }
 
-      builder = builder.transform(wsRequest => authorizationDecorator.decorate(wsRequest, request.headers.get(AUTHORIZATION)))
-
-      builder.execute[HttpResponse]
+      builderWithAuthHeaders.execute[HttpResponse]
         .map(
           response => {
             logger.info(s"Received response code ${response.status} and body ${response.body}")
@@ -118,17 +116,5 @@ class PlatformManagementController @Inject()(
         case (header, _) if header.equalsIgnoreCase("content-length") => false
         case _ => true
       }
-  }
-
-  private def targetUrl: String = {
-    val baseUrl = servicesConfig.baseUrl("platform-management-api")
-    val path = servicesConfig.getConfString("platform-management-api.path", "")
-
-    if (path.isEmpty) {
-      s"$baseUrl"
-    }
-    else {
-      s"$baseUrl/$path"
-    }
   }
 }
