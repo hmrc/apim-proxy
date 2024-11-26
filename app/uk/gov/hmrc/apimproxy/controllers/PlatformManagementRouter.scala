@@ -32,7 +32,7 @@ class PlatformManagementRouter @Inject()(
   extends SimpleRouter
   with Logging {
 
-  private val platformManagementRoute = "platform-management"
+  private val platformManagementRoute = "internal"
   private val stubsRoute = "api-hub-apim-stubs"
 
   override def routes: Routes = {

@@ -49,7 +49,7 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
       val responseBody = """{"jam": "scones"}"""
       forAll(Table(
         "backends",
-        "platform-management",
+        "internal",
         "api-hub-apim-stubs"
       )) {
         backend =>
@@ -83,7 +83,7 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
       val xApiKeyHeaderName = "x-api-key"
       forAll(Table(
         "backends",
-        "platform-management",
+        "internal",
         "api-hub-apim-stubs"
       )) {
         backend =>
@@ -127,7 +127,7 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
                 )
             )
 
-            val request = FakeRequest(GET, s"/apim-proxy/platform-management$api/test-endpoint")
+            val request = FakeRequest(GET, s"/apim-proxy/internal$api/test-endpoint")
             val result = route(fixture.application, request).value
 
             status(result) mustBe OK
@@ -140,7 +140,7 @@ class PlatformManagementControllerSpec extends AsyncFreeSpec
 
       forAll(Table(
         "backends",
-        "platform-management",
+        "internal",
         "api-hub-apim-stubs"
       )) {
         backend =>
